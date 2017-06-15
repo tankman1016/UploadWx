@@ -59,8 +59,6 @@ public class UploadService extends Service {
     private String wxFilename;
     //微信数据库密码
     private String pwdWxDb;
-    //    //需要上传的联系人列表
-//    private List<RContactForUpload> rContactForUploadList;
     //简单的String talkerList 列表
     private List<String> talkerList;
     private Gson gson;
@@ -98,16 +96,6 @@ public class UploadService extends Service {
         if (!isUpLoading) {
             isUpLoading = true;
 
-//            模拟上传
-//            new Handler().postDelayed(new Runnable() {
-//                @Override
-//                public void run() {
-//                    Log.v("Lin", "时间：" + new Date().toString());
-//                    isUpLoading = false;
-//                }
-//            }, 10000);
-
-            //上传
             doService2();
 
         }
@@ -241,13 +229,17 @@ public class UploadService extends Service {
             db.close();
         } catch (Exception e) {
             Log.v("Lin", "获取微信数据库rcontact表错误!:" + e);
+            return rContactForUploadList;
         }
         return rContactForUploadList;
     }
 
     //从微信数据库中获得信息
     private List<UploadMessage> getUploadMessages() {
+        //微信数据库的信息
         List<WxMessage> wxMessageList = new ArrayList<>();
+        //需要上传的信息
+        List<UploadMessage> uploadMessageList = new ArrayList<>();
         //获取上次上传最后的msgId
         int lastMsgId = SharedPrefsUtil.getValue(this, "LastMsgId", 0);
         Log.v("Lin", "lastMsgId:" + lastMsgId);
@@ -255,7 +247,7 @@ public class UploadService extends Service {
             SQLiteDatabase db = SQLiteDatabase.openDatabase(user.getWxdbpath(),
                     pwdWxDb, null, SQLiteDatabase.OPEN_READWRITE, hook);
 
-            Cursor cursor = db.rawQuery("select * from message where msgid>" + lastMsgId, null);
+            Cursor cursor = db.rawQuery("select * from message where msgid>" + lastMsgId+"order by msgid asc", null);
 
             while (cursor.moveToNext()) {
                 WxMessage wxMessage = new WxMessage();
@@ -271,11 +263,11 @@ public class UploadService extends Service {
             db.close();
         } catch (Exception e) {
             Log.v("Lin", "获取微信数据库message表错误!" + e);
+            return uploadMessageList;
         }
         //保存最后一次的消息id (此处的id并不一定最大啊)
         SharedPrefsUtil.putValue(this, "LastMsgId", wxMessageList.get(wxMessageList.size() - 1).getMsgId());
         //处理微信信息
-        List<UploadMessage> uploadMessageList = new ArrayList<>();
         for (WxMessage wxMessage : wxMessageList) {
             if (talkerList.contains(wxMessage.getTalker())) {
                 UploadMessage uploadMessage = new UploadMessage();
