@@ -39,6 +39,7 @@ import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.RequestBody;
 import rx.Observable;
+import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
@@ -58,6 +59,8 @@ public class UploadService extends Service {
     private Gson gson;
     //错误日志
     private List<String> errorLog;
+    //订阅
+    private Subscription subscription;
 
 
     @Nullable
@@ -113,7 +116,7 @@ public class UploadService extends Service {
 
     private void doService() {
 
-        Observable.just("Hello")
+        subscription= Observable.just("Hello")
                 .map(new Func1<String, List<RContactForUpload>>() {
                     @Override
                     public List<RContactForUpload> call(String s) {
@@ -194,7 +197,8 @@ public class UploadService extends Service {
                     @Override
                     public void onError(Throwable e) {
                         isUpLoading = false;
-                        Log.v("LIn", "未知错误" + e.toString());
+                        Log.v("Lin", "订阅中-->未知错误" + e.toString());
+                        subscription.unsubscribe();
                         Toast.makeText(UploadService.this, e.toString(), Toast.LENGTH_SHORT).show();
                     }
 
@@ -212,6 +216,7 @@ public class UploadService extends Service {
 
                     @Override
                     public void onCompleted() {
+                        subscription.unsubscribe();
                         isUpLoading = false;
                         errorLog.clear();
                     }

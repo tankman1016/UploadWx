@@ -226,11 +226,10 @@ public class IndexActivity extends AppCompatActivity {
                     ChmodUtil.setFileCanRead(enMicroMsgDb);
                 }
                 //添加所有的EnMicroMsg.db到集合中 ；
-                //提醒user设置 filename
                 dbDatas.add(enMicroMsgDb);
             }
         }
-        // 解密数据库文件得到信息，一个密码这里只能解决一个账户(-------)
+        // 解密数据库文件得到信息，一个密码这里只能解决一个账户,有密码找寻对应数据库
         if (!dbDatas.isEmpty()) {
             Log.v("微信数据库个数：", dbDatas.size() + "");
             for (File enMicroMsgDb : dbDatas) {
@@ -259,6 +258,7 @@ public class IndexActivity extends AppCompatActivity {
                     //能打开就break当前循环，不能打开就catch然后继续循环进行下次解密！
                     break;
                 } catch (Exception e) {
+                    //这里默认为密码错误！0_0
                     Log.v("Lin", "获取微信数据库userinfo表错误!:" + e);
                 }
             }
