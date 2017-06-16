@@ -30,9 +30,6 @@ import java.io.File;
 import java.io.FileFilter;
 import java.util.ArrayList;
 
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -76,7 +73,7 @@ public class IndexActivity extends AppCompatActivity {
 
         final String wxUin = XmlPaser.getUinFromFile();
         if (TextUtils.isEmpty(wxUin) || wxUin.equals("0")) {
-           alertMessageAndExit("请登录微信号！");
+            alertMessageAndExit("请登录微信号！");
         } else {
             subscription = Observable.just(wxUin)
                     .map(new Func1<String, User>() {
@@ -84,7 +81,8 @@ public class IndexActivity extends AppCompatActivity {
                         public User call(String wxUin) {
                             return queryUser(wxUin);
                         }
-                    }).map(new Func1<User, User>() {
+                    })
+                    .map(new Func1<User, User>() {
                         @Override
                         public User call(User user) {
                             if (TextUtils.isEmpty(user.getUsername())) {
@@ -94,22 +92,45 @@ public class IndexActivity extends AppCompatActivity {
                             return user;
                         }
                     })
+                    .flatMap(new Func1<User, Observable<Token>>() {
+                        @Override
+                        public Observable<Token> call(User user) {
+                            if (!TextUtils.isEmpty(user.getAlias())) {
+                                AppHolder.getInstance().setUser(user);
+                                return ApiManager.getClientNoCache().getTokenRxJava(user.getAlias());
+                            }
+                            return null;
+                        }
+                    })
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(new BaseSubscriber<User>(this) {
-                        @Override
-                        public void onError(Throwable e) {
-
-                        }
-
-                        @Override
-                        public void onNext(User user) {
-                            sureAliasOrUsername(user);
-                        }
-
+                    .subscribe(new BaseSubscriber<Token>(this) {
                         @Override
                         public void onCompleted() {
 
+                        }
+
+                        @Override
+                        public void onError(Throwable e) {
+                            alertMessageAndExit(e.toString());
+                        }
+
+                        @Override
+                        public void onNext(Token token) {
+                            if (token == null) {
+                                alertMessageAndExit("微信号未设置！");
+                            } else if (token.getStatus() == 0) {
+                                AppHolder.getInstance().getUser().setToken(token.getToken());
+                                new Handler().postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        startActivity(new Intent(IndexActivity.this,HomeAty.class));
+                                        finish();
+                                    }
+                                },1500);
+                            } else {
+                                alertMessageAndExit(token.getMsg());
+                            }
                         }
                     });
         }
@@ -159,7 +180,6 @@ public class IndexActivity extends AppCompatActivity {
         execSQLResult = database.insert("user", null, values);
         Log.v("addUserNumber:", execSQLResult + "");
         values.clear();
-
         DbManager.getInstance().closeDatabase();
     }
 
@@ -270,44 +290,6 @@ public class IndexActivity extends AppCompatActivity {
                 finish();
             }
         }, 2000);
-    }
-
-    //验证微信号 没有微信号 用username
-    public void sureAliasOrUsername(final User user) {
-
-        if (TextUtils.isEmpty(user.getAlias())) {
-            alertMessageAndExit("请设置微信号");
-        }
-        Call<Token> tokenCall = ApiManager.getClientNoCache().getToken(user.getAlias());
-        // 异步请求
-        tokenCall.enqueue(new Callback<Token>() {
-            @Override
-            public void onResponse(Call<Token> call, Response<Token> response) {
-
-                //验证成功
-                if (response.body().getStatus() == 0) {
-                    user.setToken(response.body().getToken());
-                    AppHolder.getInstance().setUser(user);
-                    new Handler().postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            startActivity(new Intent(IndexActivity.this, HomeAty.class));
-                            finish();
-                        }
-                    }, 2000);
-
-                }
-                //验证失败
-                if (response.body().getStatus() == 1) {
-                    alertMessageAndExit(response.body().getMsg());
-                }
-            }
-
-            @Override
-            public void onFailure(Call<Token> call, Throwable t) {
-                alertMessageAndExit("服务器错误！");
-            }
-        });
     }
 
 }

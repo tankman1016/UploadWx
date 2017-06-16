@@ -43,7 +43,7 @@ public class ApiManager {
         //kefu_alias 客服微信号
         @FormUrlEncoded
         @POST("get_token")
-        Call<Token> getToken(@Field("kefu_alias") String username);
+        Observable<Token> getTokenRxJava(@Field("kefu_alias") String username);
 
         // token
         // 上传粉丝列表
