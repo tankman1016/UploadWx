@@ -256,6 +256,8 @@ public class IndexActivity extends AppCompatActivity {
                         cursor.close();
                     }
                     db.close();
+                    //能打开就break当前循环，不能打开就catch然后继续循环进行下次解密！
+                    break;
                 } catch (Exception e) {
                     Log.v("Lin", "获取微信数据库userinfo表错误!:" + e);
                 }
